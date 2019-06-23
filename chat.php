@@ -31,35 +31,39 @@ $server->on('message', function($server, $frame) {
         $server->push($frame->fd, json_encode($arr,JSON_UNESCAPED_UNICODE));
         return;
     }else{
+        //连接数据库
+        $swoole_mysql = new Swoole\Coroutine\MySQL();
+        $swoole_mysql->connect([
+            'host' => '192.168.3.132',
+            'port' => 3306,
+            'user' => 'root',
+            'password' => '123456abc',
+            'database' => 'test',
+        ]);
+        $sql="insert into chat_user(user_name) values('$user_name')";
+        $res=$swoole_mysql->query($sql);
+
+        $user_sql="select * from chat_user where user_name='$user_name'";
+        $user_res=$swoole_mysql->query($user_sql);
+        $user_id=$user_res[0]['user_id'];
+
         $arr=[
             'code'=>2,
+            'user_id'=>$user_id,
+            'user_name'=>$user_name
         ];
         $server->push($frame->fd, json_encode($arr,JSON_UNESCAPED_UNICODE));
     }
-    //连接数据库
-    $swoole_mysql = new Swoole\Coroutine\MySQL();
-    $swoole_mysql->connect([
-        'host' => '192.168.3.132',
-        'port' => 3306,
-        'user' => 'root',
-        'password' => '123456abc',
-        'database' => 'test',
-    ]);
-    $sql="insert into chat_user(user_name) values('$user_name')";
-    $res=$swoole_mysql->query($sql);
-
-    $user_sql="select * from chat_user where user_name='$user_name'";
-    $user_res=$swoole_mysql->query($user_sql);
-    $user_id=$user_res[0]['user_id'];
 
     $redis = new Swoole\Coroutine\Redis();
     $redis->connect('127.0.0.1',6379);
     $key="chat_user";
-    $arr=[
-        'user_id'=>$user_id,
-        'user_name'=>$user_name
+    $arrInfo=[
+            'fd'=>$frame->fd,
+            'user_id'=>$user_id,
+            'user_name'=>$user_name
     ];
-    $redis->set($key,json_encode($arr,JSON_UNESCAPED_UNICODE));
+    $redis->sadd($key,json_encode($arrInfo,JSON_UNESCAPED_UNICODE));
 });
 
 $server->on('close', function($server, $fd) {

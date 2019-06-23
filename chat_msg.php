@@ -23,6 +23,8 @@ $server->on('open', function($server, $req) {
 $server->on('message', function($server, $frame) {
     $data=json_decode($frame->data,true);
     $chat_msg=$data['text']['chat_msg'];
+    $user_chat=$data['user_chat'];
+    $user_id=$data['user_id'];
     if(empty($chat_msg)){
         $arr=[
             'code'=>1,
@@ -31,7 +33,6 @@ $server->on('message', function($server, $frame) {
         $server->push($frame->fd, json_encode($arr,JSON_UNESCAPED_UNICODE));
         return;
     }
-
     //连接数据库
     $swoole_mysql = new Swoole\Coroutine\MySQL();
     $swoole_mysql->connect([
@@ -43,28 +44,39 @@ $server->on('message', function($server, $frame) {
     ]);
     $redis = new Swoole\Coroutine\Redis();
     $redis->connect('127.0.0.1',6379);
-    $chat_user=$redis->get('chat_user');
-
-    $data=json_decode($chat_user,true);
-    $user_id=$data['user_id'];
 
     $timestamp=mt_rand(946656000,1546272000);
     $timestamp2=mt_rand(946656000,1546272000);
     $date=date('Y-m-d',$timestamp);
     $date2=date('Y-m-d',$timestamp2);
     $id=$redis->incr('id');
-    $user_id=$user_id;
-    $time=time();
-    $sql="insert into chat_msg(id,chat_msg,chat_time,hired,separated,user_id) values('$id','$chat_msg','$time','$date','$date2','$user_id')";
-    $res=$swoole_mysql->query($sql);
 
-    foreach ($server->connections as $fd) {
-        // 需要先判断是否是正确的websocket连接，否则有可能会push失败
-        if ($server->isEstablished($fd)) {
-            $server->push($fd, $frame->data);
-        }
+    $send_id=$frame->fd;
+    $time=time();
+    if($user_chat==''){
+        $sql="insert into chat_msg(id,chat_msg,chat_time,hired,separated,user_id) values('$id','$chat_msg','$time','$date','$date2','$user_id')";
+        $res=$swoole_mysql->query($sql);
+        var_dump($res);
+    }else{
+        $user_sql="insert into chat_msg(id,chat_msg,chat_time,hired,separated,user_id,send_id) values('$id','$chat_msg','$time','$date','$date2','$user_id','$send_id')";
+        $res=$swoole_mysql->query($user_sql);
     }
 
+    $chat_user=$redis->smembers('chat_user');
+    $server->push($frame->fd, json_encode($chat_user,JSON_UNESCAPED_UNICODE));
+    //群发
+    if($send_id==''){
+        foreach ($server->connections as $fd) {
+            // 需要先判断是否是正确的websocket连接，否则有可能会push失败
+            if ($server->isEstablished($fd)) {
+                $server->push($fd, $frame->data);
+            }
+        }
+    }else{
+        if ($server->isEstablished($frame->fd)) {
+            $server->push($frame->fd, $frame->data);
+        }
+    }
 });
 
 $server->on('close', function($server, $fd) {
